@@ -1,0 +1,186 @@
+---
+title: "Iowa Food Atlas"
+output: html_notebook
+author: Nicole Wright
+---
+
+Data from usda.gov, under the Economic Research Serivce division, accessed under free use. Data was surveyed from 2010 census and last updated on usda website in 2017. All work done in association with Omni Analytics Innovative Technologies Iniative (OAITI). Results for volunteer research only. Our goal is to identifiy underserved populations in the state of Iowa with reference to food availability, poverty levels (with special interest in minor and senior populations), and median family income.
+
+```{r Load Packages}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+```
+
+
+```{r 2010 Census set up}
+census_api_key("6bfbcee4b4c37a9683ac9c0e1d174d5f0ad67674", install = TRUE, overwrite = TRUE)
+census_key <- "6bfbcee4b4c37a9683ac9c0e1d174d5f0ad67674"
+
+# First time, reload your environment so you can use the key without restarting R.
+readRenviron("~/.Renviron")
+```
+
+
+```{r Get State and Geometry}
+geo_data_tract <- get_decennial(geography = "tract", 
+              variables = "P001001", 
+               state = "IA",
+               year = 2010, 
+               geometry = TRUE, 
+               cache_table = TRUE, 
+              shift_geo = FALSE, 
+               key = census_key)
+
+```
+
+
+
+Pulled variable population from 2010 census just to get Iowa County and Tract geometry. Each Tract should contain between 1,200- 8,000 population. 
+
+```{r Read Data}
+atlas <- read_csv("C:/Users/Nicole/Desktop/OAITI/Food_Atlas/data/Food_access_Atlas.csv") %>%
+  filter(State == "Iowa") %>%
+  rename(GEOID = CensusTract) %>%
+  left_join(geo_data_tract %>%
+              select(GEOID, geometry), by = "GEOID") 
+
+
+
+index <- read_csv("C:/Users/Nicole/Desktop/OAITI/Food_Atlas/data/Food_Atlas_Variables.csv")
+
+```
+
+
+atlas_Polk is just subset to limit loading times for data. add more variables as needed. We need to focus on a single county for clarity, I'm choosing Polk county because it has both the capital and the highest population of Iowa. 
+Attempt to summarize tracts into single county data,  leave behind for now.
+
+```{r subset atlas }
+atlas_Polk <- atlas %>%
+  select(GEOID, State, County, Urban, POP2010, PovertyRate, HUNVFlag, TractHUNV, TractLOWI, geometry) %>%
+  filter(County == "Polk") %>%
+  mutate(PR = cut(PovertyRate, breaks = c(0, 5, 10, 20, 30, 40, 50),
+                  labels = c("<5", "5-10", "10-20", "20-30", "30-40", "40-50")))
+         
+
+```
+##poverty_IA$iper_minors <- cut(poverty_IA$per_minors, breaks = c(0, 5, 10, 15, 20, 25, 30, 35),
+                                       labels = c("<5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35"))##
+
+Majority of Tracts are ~4000 population, by 2010 census, however there are some extreme outliers (0, 13,000, 20,000). Which tracts do these correspond too, can they be removed? The tract with population 0 also has no other recorded value (atlas_Polk, a subset of atlas)   
+                                       
+                                       
+```{r}
+atlas_Polk %>%
+  summarize(max_pop = max(POP2010, min_pop = min(POP2010), Ave_pop = mean(POP2010), sd_pop = sd(POP2010)) 
+
+ggplot(atlas_Polk, aes( x = County, y = POP2010)) +
+  geom_boxplot()
+
+quantile(atlas_Polk$POP2010, probs = .25)
+
+Polk_out <- atlas_Polk %>%
+  filter(POP2010 < quantile(atlas_Polk$POP2010, probs = .25) - IQR(atlas_Polk$POP2010) | POP2010 > quantile(atlas_Polk$POP2010, probs = .75) + IQR(atlas_Polk$POP2010)) %>%
+  as.tibble()
+
+
+ggplot(Polk_out) +
+  geom_sf(aes(linetype = factor(POP2010))) + 
+  labs(title = "Polk County Population Outliers", fill = "Populations Count") +
+  coord_sf(datum = NA) + 
+  theme_minimal() 
+  
+```
+
+##code for sum over tracts    
+mutate(GEOID = substr(CensusTract, 1, 5)) %>%
+  group_by(State, County) %>%
+  summarize(Urban = sum(Urban),
+            Tot_Pop = sum(POP2010),
+            Poverty_Rate = sum(PovertyRate),
+            No_car_.5 = sum(HUNVFlag),
+            Tot_No_car = sum(TractHUNV),
+            Tot_Low_Income = sum(TractLOWI)) %>%
+  left_join(geo_data %>%
+              select(GEOID, geometry), by = "GEOID")##
+
+
+Use Census Geocoding to get geospatial data for addresses.Looking at Polk county, Capital building, plot supermarkets(?). https://www.census.gov/data/developers/data-sets/Geocoding-services.html
+
+Des moines Capital:
+  Matched Address: 1007 Grand Ave, DES MOINES, IA, 50309
+  Coordinates:X: -93.63035 Y: 41.586693
+  
+Note on code: https://gist.github.com/andrewheiss/0580d6ffec37b6bc4d0ae8e77bf30956; Use st_as_sf() to convert latitude and longitude into the magic geometry column. Use 4326 as the CRS, since it's the World Geodetic System, the standard -180 to 180 lat/long system used by GPS systems.
+
+```{r Reference markers}
+Markers <- tribble(
+  ~marker, ~latitude, ~longitude,
+  "Capital", -93.63035, 41.586693)
+
+Markers_sf <- Markers %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+View(Markers)
+
+ggplot() + geom_sf(data = Markers_sf)
+```
+
+```{r No cars}
+atlas_Polk %>% 
+  ggplot() +
+  geom_sf(aes(fill = factor(HUNVFlag))) + 
+  labs(title = "Households Without a vehicle Living more than half mile from Supermarket", fill = ">100 Households") +
+  coord_sf(datum = NA) + 
+  theme_minimal() 
+```
+
+```{r Povertyrate}
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(PR))) + 
+  labs(title = "Polk County Poverty Rate", fill = "Poverty Rate (%)") +
+  coord_sf(datum = NA) + 
+  theme_minimal() +
+   scale_fill_brewer(palette = "OrRd") 
+
+
+  
+```
+
+```{r poverty with captial point}
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(PR))) + 
+  labs(title = "Polk County Poverty Rate", fill = "Poverty Rate (%)") +
+  coord_sf(datum = NA) + 
+  theme_minimal() +
+   scale_fill_brewer(palette = "OrRd") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 4)
+```
+
+
+```{rpoverty with outlier pop}
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(PR))) + 
+  labs(title = "Polk County Poverty Rate", fill = "Poverty Rate (%)") +
+  coord_sf(datum = NA) + 
+  theme_minimal() +
+   scale_fill_brewer(palette = "OrRd") +
+  geom_sf(data = Polk_out, aes(linetype = factor(POP2010))) +
+  coord_sf(datum = NA) + 
+  theme_minimal()
+```
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
