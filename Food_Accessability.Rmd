@@ -10,6 +10,7 @@ Data from usda.gov, under the Economic Research Serivce division, accessed under
 library(tidyverse)
 library(tidycensus)
 library(sf)
+library(ggrepel)
 ```
 
 
@@ -57,12 +58,24 @@ Attempt to summarize tracts into single county data,  leave behind for now.
 
 ```{r subset atlas }
 atlas_Polk <- atlas %>%
-  select(GEOID, State, County, Urban, POP2010, PovertyRate, HUNVFlag, TractHUNV, TractLOWI, geometry) %>%
+  select(GEOID, State, County, Urban, POP2010, PovertyRate, lahunv1share, lablack1share, HUNVFlag, LILATracts_Vehicle, TractHUNV, TractLOWI, LILATracts_1And10, geometry) %>%
   filter(County == "Polk") %>%
   mutate(PR = cut(PovertyRate, breaks = c(0, 5, 10, 20, 30, 40, 50),
-                  labels = c("<5", "5-10", "10-20", "20-30", "30-40", "40-50")))
-         
+                  labels = c("<5", "5-10", "10-20", "20-30", "30-40", "40-50"))) %>%
+  mutate(per_NoCar1mi = lahunv1share * 100,  
+         FD1 = cut(per_NoCar1mi, breaks = c(0.00000, 2.5, 5, 10),
+                   labels = c("<2.5", "2.5-5", "5-10")))
 
+vars <- c("State", "County", "Urban", "POP2010", "PovertyRate", "lahunv1share", "lablack1share", "HUNVFlag", "LILATracts_Vehicle", "TractHUNV", "TractLOWI", "LILATracts_1And10") %>%
+  as_tibble()
+
+class(vars$value)
+class(index)
+
+index %>% 
+  as_tibble() %>%
+  filter(Field == "TractHUNV", Field == "TractLOWI" ) %>%
+  View()
 ```
 ##poverty_IA$iper_minors <- cut(poverty_IA$per_minors, breaks = c(0, 5, 10, 15, 20, 25, 30, 35),
                                        labels = c("<5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35"))##
@@ -74,14 +87,11 @@ Majority of Tracts are ~4000 population, by 2010 census, however there are some 
 atlas_Polk %>%
   summarize(max_pop = max(POP2010, min_pop = min(POP2010), Ave_pop = mean(POP2010), sd_pop = sd(POP2010)) 
 
-ggplot(atlas_Polk, aes( x = County, y = POP2010)) +
-  geom_boxplot()
-
 quantile(atlas_Polk$POP2010, probs = .25)
 
 Polk_out <- atlas_Polk %>%
   filter(POP2010 < quantile(atlas_Polk$POP2010, probs = .25) - IQR(atlas_Polk$POP2010) | POP2010 > quantile(atlas_Polk$POP2010, probs = .75) + IQR(atlas_Polk$POP2010)) %>%
-  as.tibble()
+  as_tibble()
 
 
 ggplot(Polk_out) +
@@ -89,7 +99,8 @@ ggplot(Polk_out) +
   labs(title = "Polk County Population Outliers", fill = "Populations Count") +
   coord_sf(datum = NA) + 
   theme_minimal() 
-  
+
+
 ```
 
 ##code for sum over tracts    
@@ -121,9 +132,6 @@ Markers <- tribble(
 Markers_sf <- Markers %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 
-View(Markers)
-
-ggplot() + geom_sf(data = Markers_sf)
 ```
 
 ```{r No cars}
@@ -154,15 +162,26 @@ atlas_Polk %>%
   filter(POP2010 != 0) %>%
   ggplot() +
   geom_sf(aes(fill = factor(PR))) + 
-  labs(title = "Polk County Poverty Rate", fill = "Poverty Rate (%)") +
+  labs(title = "Polk County 2010 Poverty Rate", fill = "Poverty Rate (%)") +
   coord_sf(datum = NA) + 
+  scale_fill_brewer(palette = "OrRd") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
   theme_minimal() +
-   scale_fill_brewer(palette = "OrRd") +
-  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 4)
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25)
+
+
 ```
+Sucessfully created a Polk county poverty rate distribution with capital buidling reference and label. We can see that there is high poverty in the part of Des Moines nearest to the capital, the further from the capital you get, in Polk county, the lower the poverty rate. In the future look to overlaying city limits (following examples from outlier overlay). 
+
+References for getting city limits data:
+https://gis.stackexchange.com/questions/183248/getting-polygon-boundaries-of-city-in-json-from-google-maps-api
+https://nominatim.openstreetmap.org/details.php?place_id=197776099
+http://polygons.openstreetmap.fr/index.py?id=128653
 
 
-```{rpoverty with outlier pop}
+```{r}
 atlas_Polk %>%
   filter(POP2010 != 0) %>%
   ggplot() +
@@ -175,12 +194,56 @@ atlas_Polk %>%
   coord_sf(datum = NA) + 
   theme_minimal()
 ```
+
  
  
+```{r poverty with HUNVflag (factor)}
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(PR), alpha = factor(HUNVFlag))) + 
+  labs(title = "Polk County 2010 Poverty Rate", fill = "Poverty Rate (%)") +
+  coord_sf(datum = NA) + 
+  scale_fill_brewer(palette = "OrRd") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25)  
+  
+
+```
  
- 
- 
- 
- 
+```{r Polk county no car >1mi from supermarket}
+#lahunv1share: Share of tract housing units that are without vehicle and beyond 1 mile from supermarket
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = per_NoCar1mi)) + 
+  labs(title = "No Vehicle and >1 mile from Supermarket", fill = "Housing units (%)") +
+  coord_sf(datum = NA) + 
+  scale_fill_continuous(high = "#0286fa", low = "#f0f8ff") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
+      point.padding = .25)
+
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  drop_na(FD1) %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(PR), alpha = per_NoCar1mi)) + 
+  labs(title = "No Vehicle and >1 mile from Supermarket", fill = "Housing units (%)") +
+  coord_sf(datum = NA) + 
+  scale_fill_brewer("Blues") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25) 
+
+```
  
  
