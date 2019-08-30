@@ -6,6 +6,11 @@ author: Nicole Wright
 
 Data from usda.gov, under the Economic Research Serivce division, accessed under free use. Data was surveyed from 2010 census and last updated on usda website in 2017. All work done in association with Omni Analytics Innovative Technologies Iniative (OAITI). Results for volunteer research only. Our goal is to identifiy underserved populations in the state of Iowa with reference to food availability, poverty levels (with special interest in minor and senior populations), and median family income.
 
+Term description
+https://www.ers.usda.gov/data-products/food-access-research-atlas/documentation/
+How is low access defined? At poverty level or slightly above?
+
+
 ```{r Load Packages}
 library(tidyverse)
 library(tidycensus)
@@ -58,13 +63,18 @@ Attempt to summarize tracts into single county data,  leave behind for now.
 
 ```{r subset atlas }
 atlas_Polk <- atlas %>%
-  select(GEOID, State, County, Urban, POP2010, PovertyRate, lahunv1share, lablack1share, HUNVFlag, LILATracts_Vehicle, TractHUNV, TractLOWI, LILATracts_1And10, geometry) %>%
+  select(GEOID, State, County, Urban, POP2010, PovertyRate, lahunv1share, lablack1share, lablackhalfshare, LILATracts_Vehicle, TractHUNV, TractLOWI, LILATracts_1And10, LowIncomeTracts, laseniorshalfshare, laseniors1share, laseniors1share, geometry) %>%
   filter(County == "Polk") %>%
   mutate(PR = cut(PovertyRate, breaks = c(0, 5, 10, 20, 30, 40, 50),
                   labels = c("<5", "5-10", "10-20", "20-30", "30-40", "40-50"))) %>%
   mutate(per_NoCar1mi = lahunv1share * 100,  
-         FD1 = cut(per_NoCar1mi, breaks = c(0.00000, 2.5, 5, 10),
+                 FD1 = cut(per_NoCar1mi, breaks = c(0.00000, 2.5, 5, 10),
+                   labels = c("<2.5", "2.5-5", "5-10")),
+         per_black1share = lablack1share * 100,
+         seniors1 = cut((laseniors1share * 100), breaks = c(-Inf, 2.5, 5, 10),
                    labels = c("<2.5", "2.5-5", "5-10")))
+
+View(atlas_Polk)
 
 vars <- c("State", "County", "Urban", "POP2010", "PovertyRate", "lahunv1share", "lablack1share", "HUNVFlag", "LILATracts_Vehicle", "TractHUNV", "TractLOWI", "LILATracts_1And10") %>%
   as_tibble()
@@ -80,8 +90,13 @@ index %>%
 ##poverty_IA$iper_minors <- cut(poverty_IA$per_minors, breaks = c(0, 5, 10, 15, 20, 25, 30, 35),
                                        labels = c("<5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35"))##
 
-Majority of Tracts are ~4000 population, by 2010 census, however there are some extreme outliers (0, 13,000, 20,000). Which tracts do these correspond too, can they be removed? The tract with population 0 also has no other recorded value (atlas_Polk, a subset of atlas)   
-                                       
+Majority of Tracts are ~4000 population, by 2010 census, however there are some extreme outliers (0, 13,000, 20,000). Which tracts do these correspond too, can they be removed? The tract with population 0 also has no other recorded value (atlas_Polk, a subset of atlas)  
+
+```{r atlas_Iowa}
+atlas_Iowa <- atlas %>%
+  select(GEOID, State, Urban, County, LILATracts_Vehicle, LowIncomeTracts, geometry) 
+```
+                                        
                                        
 ```{r}
 atlas_Polk %>%
@@ -162,14 +177,14 @@ atlas_Polk %>%
   filter(POP2010 != 0) %>%
   ggplot() +
   geom_sf(aes(fill = factor(PR))) + 
-  labs(title = "Polk County 2010 Poverty Rate", fill = "Poverty Rate (%)") +
+  labs(title = "Polk County 2010 Poverty Rate", fill = "Poverty Rate (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
   coord_sf(datum = NA) + 
   scale_fill_brewer(palette = "OrRd") +
   geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
   theme_minimal() +
   xlab(" ") + 
   ylab(" ") +
-  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25)
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25) 
 
 
 ```
@@ -216,26 +231,27 @@ atlas_Polk %>%
  
 ```{r Polk county no car >1mi from supermarket}
 #lahunv1share: Share of tract housing units that are without vehicle and beyond 1 mile from supermarket
+##continuous No car > 1mile from supermarket
 atlas_Polk %>%
   filter(POP2010 != 0) %>%
   ggplot() +
   geom_sf(aes(fill = per_NoCar1mi)) + 
-  labs(title = "No Vehicle and >1 mile from Supermarket", fill = "Housing units (%)") +
+  labs(title = "Households without a Vehicle and >1 mile from a Supermarket", fill = "Households (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
   coord_sf(datum = NA) + 
-  scale_fill_continuous(high = "#0286fa", low = "#f0f8ff") +
+  scale_fill_continuous(high = "#4382ba", low = "#ffffff") +
   geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
   theme_minimal() +
   xlab(" ") + 
   ylab(" ") +
   geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
       point.padding = .25)
-
+##Attempt to combine Poverty Rate and No car >1mile from supermarket
 atlas_Polk %>%
   filter(POP2010 != 0) %>%
   drop_na(FD1) %>%
   ggplot() +
   geom_sf(aes(fill = factor(PR), alpha = per_NoCar1mi)) + 
-  labs(title = "No Vehicle and >1 mile from Supermarket", fill = "Housing units (%)") +
+  labs(title = "No Vehicle and >1 mile from Supermarket", fill = "Housing units (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
   coord_sf(datum = NA) + 
   scale_fill_brewer("Blues") +
   geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
@@ -245,5 +261,78 @@ atlas_Polk %>%
   geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25) 
 
 ```
+ Examing the No car and >1mi from supermarket (food access), continuous varible and the overlay plot with poverty and food access. 
+ To fix discrete factor issue (reading 0 as NA) use:
+ mutate(per_NoCar1mi = log(lahunv1share * 100),  
+         FD1 = cut(per_NoCar1mi, breaks = c(-Inf, 2.5, 5, 10),
+                   labels = c("<2.5", "2.5-5", "5-10")))
+OR/AND  breaks = c(-Inf, 0, 2.5, 5, 10)
  
  
+ 
+```{r Examining Black American's access}
+#within >1mi
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = per_black1share)) + 
+  labs(title = "Black Americans living >1mi from store", fill = "population (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  coord_sf(datum = NA) + 
+  scale_fill_continuous(high = "#4382ba", low = "#ffffff") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25) 
+
+#> 1/2 mi
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = (lablackhalfshare * 100))) + 
+  labs(title = "Black Americans living >.5mi from store", fill = "population (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  coord_sf(datum = NA) + 
+  scale_fill_continuous(high = "#4382ba", low = "#ffffff") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4, point.padding = .25) 
+#how helpful is this plot when it doesn't account for vehicle access?
+```
+Max black population with low access living >1mi from store
+
+
+```{r Food desert Iowa}
+atlas_Iowa %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(LowIncomeTracts)), color = NA) +
+  coord_sf(datum = NA) +
+  scale_fill_grey(start = 1, end = 0)
+
+ggplot(data = atlas_Polk) +
+  geom_sf(aes( fill = factor(LowIncomeTracts), alpha = factor(LILATracts_Vehicle))) +
+  coord_sf(datum = NA) 
+
+```
+
+Seniors food access
+
+```{r Seniors food access}
+
+atlas_Polk %>%
+  filter(POP2010 != 0) %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(seniors1))) + 
+  labs(title = "Seniors living > 1 mile from Supermarket", fill = "Seniors (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  coord_sf(datum = NA) + 
+  scale_fill_brewer(palette = "Blues") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
+      point.padding = .25)
+
+```
+
