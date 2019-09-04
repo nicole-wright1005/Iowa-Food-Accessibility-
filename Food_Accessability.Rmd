@@ -63,7 +63,7 @@ Attempt to summarize tracts into single county data,  leave behind for now.
 
 ```{r subset atlas }
 atlas_Polk <- atlas %>%
-  select(GEOID, State, County, Urban, POP2010, PovertyRate, lahunv1share, lablack1share, lablackhalfshare, LILATracts_Vehicle, TractHUNV, TractLOWI, LILATracts_1And10, LowIncomeTracts, laseniorshalfshare, laseniors1share, laseniors1share, geometry) %>%
+  select(GEOID, State, County, Urban, POP2010, PovertyRate, lahunv1share, lablack1share, lablackhalfshare, LILATracts_Vehicle, TractHUNV, TractLOWI, LILATracts_1And10, LowIncomeTracts, laseniorshalfshare, lakids1share, lakids10share, laseniors1share, geometry) %>%
   filter(County == "Polk") %>%
   mutate(PR = cut(PovertyRate, breaks = c(0, 5, 10, 20, 30, 40, 50),
                   labels = c("<5", "5-10", "10-20", "20-30", "30-40", "40-50"))) %>%
@@ -71,8 +71,10 @@ atlas_Polk <- atlas %>%
                  FD1 = cut(per_NoCar1mi, breaks = c(0.00000, 2.5, 5, 10),
                    labels = c("<2.5", "2.5-5", "5-10")),
          per_black1share = lablack1share * 100,
-         seniors1 = cut((laseniors1share * 100), breaks = c(-Inf, 2.5, 5, 10),
-                   labels = c("<2.5", "2.5-5", "5-10")))
+         seniors1 = cut((laseniors1share * 100), breaks = c(-Inf, 2.5, 5, 10, 15),
+                   labels = c("<2.5", "2.5-5", "5-10", "10-15")),
+         kids1 = cut((lakids1share * 100), breaks = c(-Inf, 0, .5, 2.5, 5, 10, 20, 30),
+                   labels = c("0", "0-.5", ".5-2.5", "2.5-5", "5-10", "10-20", "20-30")))
 
 View(atlas_Polk)
 
@@ -321,12 +323,12 @@ Seniors food access
 ```{r Seniors food access}
 
 atlas_Polk %>%
-  filter(POP2010 != 0) %>%
+  filter(seniors1 != 0) %>%
   ggplot() +
   geom_sf(aes(fill = factor(seniors1))) + 
-  labs(title = "Seniors living > 1 mile from Supermarket", fill = "Seniors (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  labs(title = "Seniors Living > 1 mile from Supermarket", fill = "Seniors (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
   coord_sf(datum = NA) + 
-  scale_fill_brewer(palette = "Blues") +
+  scale_fill_brewer(palette = "OrRd") +
   geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
   theme_minimal() +
   xlab(" ") + 
@@ -336,3 +338,35 @@ atlas_Polk %>%
 
 ```
 
+Minors and Seniors living in rural areas out side of city limits are more likely to live >1mile from a supermarket. This makes sense, in rural areas the nearest grocery store is often >5miles away. Notice how there are considerably more minors than seniors living >1miles from supermarkets, perhaps this suggests seniors are more likely to live closer to towns than families with children. Compare to the poverty rate graph above, poverty rate increases with proximity to the capital but physical promiximity to supermarkets also increase, however we may have the effect that even populations who are close to stores cannot afford healthy groceries. There is only one tract with a minor population living >10miles from a supermarket (.4%). Therefore marojity of minors are living between 1-10miles from supermarket
+
+```{r Minors food access}
+atlas_Polk %>%
+  ggplot() +
+  geom_sf(aes(fill = factor(kids1))) + 
+  labs(title = "Minors Living > 1 mile from Supermarket", fill = "Minors (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  coord_sf(datum = NA) + 
+  scale_fill_brewer(palette = "OrRd") +
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
+      point.padding = .25)
+
+```
+
+```{r Minors food access}
+atlas_Polk %>%
+  ggplot() +
+  geom_sf(aes(fill = lakids10share)) + 
+  labs(title = "Minors Living > 10 mile from Supermarket", fill = "Minors (%)", caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  coord_sf(datum = NA) + 
+  geom_point(data = Markers, aes(x = latitude, y = longitude), size = 3) +
+  theme_minimal() +
+  xlab(" ") + 
+  ylab(" ") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
+      point.padding = .25)
+
+```
