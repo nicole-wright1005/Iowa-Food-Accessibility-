@@ -10,38 +10,73 @@ library(raster) # raster handling (needed for relief)
 library(viridis) # viridis color scale
 library(cowplot) # stack ggplots ##I'm using 3.4, cowplot isn't available for this version, but I'm pretty sure that V3.5 will mess up my code.
 library(rmarkdown)
+library(tidycensus)
+library(ggrepel)
 
-# create 3 buckets for gini
+census_api_key("6bfbcee4b4c37a9683ac9c0e1d174d5f0ad67674", install = TRUE, overwrite = TRUE)
+census_key <- "6bfbcee4b4c37a9683ac9c0e1d174d5f0ad67674"
+
+geo_data_tract <- get_decennial(geography = "tract", 
+                                variables = "P001001", 
+                                state = "IA",
+                                year = 2010, 
+                                geometry = TRUE, 
+                                cache_table = TRUE, 
+                                shift_geo = FALSE, 
+                                key = census_key) 
+
+
+atlas <- read_csv("D:/OAITI/Food_Atlas/data/Food_Access_Atlas.csv") %>%
+  filter(State == "Iowa") %>%
+  rename(GEOID = CensusTract) %>%
+  left_join(geo_data_tract %>%
+              dplyr::select(GEOID, geometry), by = "GEOID") 
+
+atlas_Polk <- atlas %>%
+  dplyr::select(GEOID, State, County, Urban, POP2010, PovertyRate, lahunv1share, lablack1share, HUNVFlag, LILATracts_Vehicle, TractHUNV, TractLOWI, LILATracts_1And10, geometry) %>%
+  filter(County == "Polk") %>%
+  mutate(PR = cut(PovertyRate, breaks = c(0, 5, 10, 20, 30, 40, 50),
+                  labels = c("<5", "5-10", "10-20", "20-30", "30-40", "40-50"))) %>%
+  mutate(per_NoCar1mi = lahunv1share * 100,  
+         FD1 = cut(per_NoCar1mi, breaks = c(0.00000, 2.5, 5, 10),
+                   labels = c("<2.5", "2.5-5", "5-10")))
+
+Markers <- tribble(
+  ~marker, ~latitude, ~longitude,
+  "Capital", -93.63035, 41.586693)
+
+Markers_sf <- Markers %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+##No car and >1mi from supermarket == Low Food Access
+# create 3 buckets for No car and >1mi from
 quantiles_NoCar1mi <- atlas_Polk %>%
   pull(per_NoCar1mi) %>%
   quantile(probs = seq(0, 1, length.out = 3))
-View(quantiles_PovertyRate)
-# create 3 buckets for mean income
+
+# create 3 buckets forPoverty Rate (PR)
 quantiles_PovertyRate <- atlas_Polk %>%
   pull(PovertyRate) %>%
   quantile(probs = seq(0, 1, length.out = 3))
 
 # create color scale that encodes two variables
-# red for gini and blue for mean income
 # the special notation with gather is due to readibility reasons
 bivariate_color_scale <- tibble(
-  "3 - 3" = "#3F2949", # high inequality, high income
-  "2 - 3" = "#435786",
-  "1 - 3" = "#4885C1", # low inequality, high income
-  "3 - 2" = "#77324C",
-  "2 - 2" = "#806A8A", # medium inequality, medium income
-  "1 - 2" = "#89A1C8",
-  "3 - 1" = "#AE3A4E", # high inequality, low income
-  "2 - 1" = "#BC7C8F",
-  "1 - 1" = "#CABED0" # low inequality, low income
+  "3 - 3" = "#574249", # High Low Food Access (LFA)
+  "2 - 3" = "#985356",
+  "1 - 3" = "#c85a5a", # low LFA, high Poverty Rate (PR)
+  "3 - 2" = "#627f8c",
+  "2 - 2" = "#ad9ea5", # medium LFA, medium PR
+  "1 - 2" = "#e4acac",
+  "3 - 1" = "#64acbe", # high LFA, low PR
+  "2 - 1" = "#b0d5df",
+  "1 - 1" = "#e8e8e8" # low LFA, low PR
 ) %>%
   gather("group", "fill")
 
-
 # cut into groups defined above and join fill
 Bivar_map <- atlas_Polk %>%
-  mutate(
-    NoCar1mi_quantiles = cut(
+  mutate(NoCar1mi_quantiles = cut(
       per_NoCar1mi,
       breaks = quantiles_NoCar1mi,
       include.lowest = TRUE
@@ -59,14 +94,13 @@ Bivar_map <- atlas_Polk %>%
     )
   ) %>%
   # we now join the actual hex values per "group"
-  # so each municipality knows its hex value based on the his gini and avg
+  # so each municipality knows its hex value based on the combined LFA and PR
   # income value
   left_join(bivariate_color_scale, by = "group") 
-View(Bivar_map)
 
 map <- ggplot(data = Bivar_map) +
 geom_sf(
-  aes(
+  aes(geometry = geometry,
     fill = fill
   ),
   # use thin white stroke for municipalities
@@ -74,13 +108,19 @@ geom_sf(
   size = 0.1
 ) +
   scale_fill_identity() +
-  labs(title = "Intersection of Poverty and lack of Car")
+  labs(title = "Intersection of Poverty and Low Food Access for Polk County",
+       caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
+  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
+                  point.padding = .25) +
   theme_minimal() +
   xlab(" ") + 
   ylab(" ") +
-  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
-                  point.padding = .25)
-  
+  theme(
+    axis.text = element_blank(), panel.grid = element_blank()
+  )
+
+##Where is my point??
+
 #Draw Legend
 # separate the groups
   bivariate_color_scale %<>%
@@ -88,67 +128,32 @@ geom_sf(
     mutate(NoCar1mi = as.integer(NoCar1mi),
            PovertyRate = as.integer(PovertyRate))
   
-  View(bivariate_color_scale)
-  
-  legend <- ggplot() +
-    geom_tile(
-      data = bivariate_color_scale,
-      mapping = aes(
-        x = NoCar1mi,
-        y = PovertyRate,
-        fill = fill)
-    ) +
-    scale_fill_identity() +
-    labs(x = "Percentage without a car ??????",
-         y = "Poverty Rate ??????") +
-    theme_minimal() +
-    # make font small enough
-    theme(
-      axis.title = element_text(size = 6)
-    ) +
-      # quadratic tiles
-    coord_fixed()
 
-  #Draw map and legend
-  ggdraw() +
-    draw_plot(Bivar_map, 0, 0, 1, 1) +
-    draw_plot(legend, 0.05, 0.075, 0.2, 0.2)  
-  # error: no package called cowplot??
-  
-  ggplot(data = Bivar_map) +
-    geom_sf(
-      aes(
-        fill = fill
-      ),
-      # use thin white stroke for municipalities
-      color = "white",
-      size = 0.1
-    ) +
-    scale_fill_identity() +
-    labs(title = "Intersection of Poverty and lack of Car") +
-    geom_tile(
-      data = bivariate_color_scale,
-      mapping = aes(
-        x = NoCar1mi,
-        y = PovertyRate,
-        fill = fill))
-      
-    #legend addition 
-    ggplot() +
-    geom_tile(
-      data = bivariate_color_scale,
+ legend <- ggplot() +
+   geom_tile(
+    data = bivariate_color_scale,
       mapping = aes(
         x = NoCar1mi,
         y = PovertyRate,
         fill = fill)
     ) +
-    scale_fill_identity() +
-    labs(x = "Percentage without a car ??????",
-         y = "Poverty Rate ??????") +
-    # make font small enough
-    theme(
-      axis.title = element_text(size = 6)
-    ) +
-    # quadratic tiles
-    coord_fixed()
+   scale_fill_identity() +
+   labs(x = "Low Food Access",
+        y = "Poverty Rate") +
+   theme_minimal() +
+   theme(axis.title = element_text(size = 8))
+   
+ 
+ ggdraw() +
+    draw_plot(map, 0, 0, 1, 1) +
+    draw_plot(legend, 0.06, 0.035, 0.2, 0.2) 
+
+
   
+##Draw_plot example
+    p <- ggplot(data.frame(x = 1:3, y = 1:3), aes(x, y)) +
+      geom_point()
+    # draw into the top-right corner of a larger plot area
+    ggdraw() + draw_plot(p, .3, .3, .4, .4)
+    
+    
