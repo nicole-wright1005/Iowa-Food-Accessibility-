@@ -40,7 +40,7 @@ atlas_Polk <- atlas %>%
   mutate(per_NoCar1mi = lahunv1share * 100,  
          FD1 = cut(per_NoCar1mi, breaks = c(0.00000, 2.5, 5, 10),
                    labels = c("<2.5", "2.5-5", "5-10")))
-
+##Add more regions...
 Markers <- tribble(
   ~marker, ~latitude, ~longitude,
   "Capital", -93.63035, 41.586693)
@@ -52,12 +52,12 @@ Markers_sf <- Markers %>%
 # create 3 buckets for No car and >1mi from
 quantiles_NoCar1mi <- atlas_Polk %>%
   pull(per_NoCar1mi) %>%
-  quantile(probs = seq(0, 1, length.out = 3))
+  quantile(probs = c(0, .5, .75, 1))
 
 # create 3 buckets forPoverty Rate (PR)
 quantiles_PovertyRate <- atlas_Polk %>%
   pull(PovertyRate) %>%
-  quantile(probs = seq(0, 1, length.out = 3))
+  quantile(probs =c(0, .5, .75, 1))
 
 # create color scale that encodes two variables
 # the special notation with gather is due to readibility reasons
@@ -73,7 +73,7 @@ bivariate_color_scale <- tibble(
   "1 - 1" = "#e8e8e8" # low LFA, low PR
 ) %>%
   gather("group", "fill")
-
+#e8e8e8
 # cut into groups defined above and join fill
 Bivar_map <- atlas_Polk %>%
   mutate(NoCar1mi_quantiles = cut(
@@ -98,7 +98,7 @@ Bivar_map <- atlas_Polk %>%
   # income value
   left_join(bivariate_color_scale, by = "group") 
 
-map <- ggplot(data = Bivar_map) +
+b_map <- ggplot(data = Bivar_map) +
 geom_sf(
   aes(geometry = geometry,
     fill = fill
@@ -110,8 +110,6 @@ geom_sf(
   scale_fill_identity() +
   labs(title = "Intersection of Poverty and Low Food Access for Polk County",
        caption = "Data from 2015 Food Access Research Atlas available at ers.usda.gov") +
-  geom_text_repel(data = Markers, aes(x = latitude, y = longitude, label = Markers$marker), size = 4,
-                  point.padding = .25) +
   theme_minimal() +
   xlab(" ") + 
   ylab(" ") +
@@ -129,7 +127,7 @@ geom_sf(
            PovertyRate = as.integer(PovertyRate))
   
 
- legend <- ggplot() +
+ l_plot <- ggplot() +
    geom_tile(
     data = bivariate_color_scale,
       mapping = aes(
@@ -144,16 +142,9 @@ geom_sf(
    theme(axis.title = element_text(size = 8))
    
  
- ggdraw() +
-    draw_plot(map, 0, 0, 1, 1) +
-    draw_plot(legend, 0.06, 0.035, 0.2, 0.2) 
+c_map <- b_map + 
+   geom_sf(data = DM_poly_test, alpha = 0, size = .25) 
 
-
-  
-##Draw_plot example
-    p <- ggplot(data.frame(x = 1:3, y = 1:3), aes(x, y)) +
-      geom_point()
-    # draw into the top-right corner of a larger plot area
-    ggdraw() + draw_plot(p, .3, .3, .4, .4)
-    
-    
+ggdraw() +
+  draw_plot(c_map, 0, 0, 1, 1) +
+  draw_plot(l_plot, 0.06, 0.035, 0.2, 0.2) 
